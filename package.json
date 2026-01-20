@@ -1,0 +1,31 @@
+{
+  "name": "phabprint",
+  "version": "1.0.0",
+  "author": "Alex Ghirelli",
+  "description": "Physical Kanban board printer for Phabricator tasks - prints task tickets on thermal printer during sprint planning",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "print-once": "node src/index.js --once",
+    "test-printer": "node src/test-printer.js"
+  },
+  "keywords": [
+    "phabricator",
+    "thermal-printer",
+    "kanban",
+    "agile",
+    "sprint",
+    "escpos"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.6.0",
+    "dotenv": "^16.3.1",
+    "escpos": "^3.0.0-alpha.6",
+    "escpos-usb": "^3.0.0-alpha.4"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  }
+}
