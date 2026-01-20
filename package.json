@@ -8,6 +8,7 @@
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
     "print-once": "node src/index.js --once",
+    "dry-run": "node src/index.js --dry-run --once",
     "test-printer": "node src/test-printer.js"
   },
   "keywords": [
@@ -20,7 +21,6 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "axios": "^1.6.0",
     "dotenv": "^16.3.1",
     "escpos": "^3.0.0-alpha.6",
     "escpos-usb": "^3.0.0-alpha.4"

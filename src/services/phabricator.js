@@ -1,4 +1,14 @@
-const axios = require('axios');
+/**
+ * Phabricator Conduit API Service
+ *
+ * IMPORTANT: This service uses curl instead of standard HTTP libraries
+ * (axios, fetch, etc.) because Wikimedia blocks requests that don't come
+ * from curl with a 403 error. They likely use TLS fingerprinting or other
+ * bot detection techniques that identify Node.js HTTP clients.
+ * Tested: axios, node-fetch, native fetch - all blocked with 403.
+ * Only curl works.
+ */
+const { execSync } = require('child_process');
 const { config } = require('../config');
 
 class PhabricatorService {
@@ -9,57 +19,78 @@ class PhabricatorService {
   }
 
   /**
-   * Make a Conduit API call to Phabricator
+   * Flatten nested object to PHP-style form params
+   * e.g., { constraints: { members: ['PHID-USER-xxx'] } }
+   * becomes: { 'constraints[members][0]': 'PHID-USER-xxx' }
    */
-  async conduitCall(method, params = {}) {
-    const formData = new URLSearchParams();
-    formData.append('api.token', this.apiToken);
+  flattenParams(obj, prefix = '') {
+    const result = {};
 
-    // Flatten params for form encoding
-    for (const [key, value] of Object.entries(params)) {
-      if (typeof value === 'object') {
-        formData.append(key, JSON.stringify(value));
+    for (const [key, value] of Object.entries(obj)) {
+      const newKey = prefix ? `${prefix}[${key}]` : key;
+
+      if (Array.isArray(value)) {
+        value.forEach((item, index) => {
+          if (typeof item === 'object' && item !== null) {
+            Object.assign(result, this.flattenParams(item, `${newKey}[${index}]`));
+          } else {
+            result[`${newKey}[${index}]`] = item;
+          }
+        });
+      } else if (typeof value === 'object' && value !== null) {
+        Object.assign(result, this.flattenParams(value, newKey));
       } else {
-        formData.append(key, value);
+        result[newKey] = value;
       }
     }
 
-    const response = await axios.post(`${this.baseUrl}/${method}`, formData, {
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-    });
+    return result;
+  }
 
-    if (response.data.error_code) {
-      throw new Error(`Phabricator API error: ${response.data.error_info}`);
+  /**
+   * Make a Conduit API call to Phabricator using curl
+   * (Wikimedia blocks standard HTTP clients, but allows curl)
+   */
+  async conduitCall(method, params = {}) {
+    const url = `${this.baseUrl}/${method}`;
+
+    // Build curl arguments
+    const curlArgs = ['--data-urlencode', `api.token=${this.apiToken}`];
+
+    // Flatten nested params to PHP-style form encoding
+    const flatParams = this.flattenParams(params);
+    for (const [key, value] of Object.entries(flatParams)) {
+      curlArgs.push('--data-urlencode', `${key}=${value}`);
     }
 
-    return response.data.result;
+    // Execute curl
+    const curlCmd = `curl -s -X POST ${curlArgs.map(a => `'${a}'`).join(' ')} '${url}'`;
+
+    try {
+      const output = execSync(curlCmd, { encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 });
+      const data = JSON.parse(output);
+
+      if (data.error_code) {
+        throw new Error(`Phabricator API error: ${data.error_info}`);
+      }
+
+      return data.result;
+    } catch (err) {
+      if (err.message.includes('Phabricator API error')) {
+        throw err;
+      }
+      throw new Error(`curl failed: ${err.message}`);
+    }
   }
 
   /**
-   * Get all projects where the user is a member
+   * Get tasks assigned to the user
    */
-  async getMyProjects() {
-    const result = await this.conduitCall('project.search', {
-      constraints: {
-        members: [this.userPhid],
-      },
-      limit: 100,
-    });
-
-    return result.data;
-  }
-
-  /**
-   * Get tasks assigned to the user in specified projects
-   */
-  async getMyTasks(projectPhids) {
+  async getMyTasks() {
     const result = await this.conduitCall('maniphest.search', {
       constraints: {
         assigned: [this.userPhid],
         statuses: config.filters.statuses,
-        projects: projectPhids,
       },
       attachments: {
         projects: true,
@@ -72,38 +103,14 @@ class PhabricatorService {
   }
 
   /**
-   * Get column information for a project board
-   */
-  async getProjectColumns(projectPhid) {
-    const result = await this.conduitCall('project.column.search', {
-      constraints: {
-        projects: [projectPhid],
-      },
-    });
-
-    return result.data;
-  }
-
-  /**
    * Get tasks that are currently in sprint columns
    */
   async getSprintTasks() {
-    // 1. Get user's projects
-    const projects = await this.getMyProjects();
-    const projectPhids = projects.map(p => p.phid);
+    // 1. Get all tasks assigned to the user
+    const tasks = await this.getMyTasks();
 
-    if (projectPhids.length === 0) {
-      console.log('No projects found for user');
-      return [];
-    }
-
-    // 2. Get tasks in those projects
-    const tasks = await this.getMyTasks(projectPhids);
-
-    // 3. Filter tasks in sprint columns
-    const sprintTasks = this.filterSprintTasks(tasks);
-
-    return sprintTasks;
+    // 2. Filter tasks in sprint columns
+    return this.filterSprintTasks(tasks);
   }
 
   /**

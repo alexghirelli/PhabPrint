@@ -14,9 +14,10 @@ const banner = `
 `;
 
 class PhabPrint {
-  constructor() {
+  constructor(options = {}) {
+    this.dryRun = options.dryRun || false;
     this.phabricator = new PhabricatorService();
-    this.printer = new PrinterService();
+    this.printer = new PrinterService({ dryRun: this.dryRun });
     this.isRunning = false;
   }
 
@@ -67,6 +68,9 @@ class PhabPrint {
     console.log('[CONFIG] User PHID:', config.phabricator.userPhid);
     console.log('[CONFIG] Poll interval:', config.polling.intervalMs / 1000, 'seconds');
     console.log('[CONFIG] Sprint columns:', config.filters.sprintColumns.join(', '));
+    if (this.dryRun) {
+      console.log('[CONFIG] Mode: DRY-RUN (no actual printing)');
+    }
     console.log('');
 
     this.isRunning = true;
@@ -118,7 +122,8 @@ class PhabPrint {
 
 // CLI handling
 async function main() {
-  const app = new PhabPrint();
+  const dryRun = process.argv.includes('--dry-run');
+  const app = new PhabPrint({ dryRun });
 
   // Handle CLI arguments
   if (process.argv.includes('--clear-cache')) {
@@ -146,9 +151,11 @@ Usage:
   npm start              Start polling for tasks
   npm run print-once     Print once and exit
   npm run test-printer   Print a test ticket
+  npm run dry-run        Fetch tasks and simulate printing (no printer needed)
 
 Options:
   --once          Run once and exit (no polling)
+  --dry-run       Fetch from Phabricator but simulate printing (no printer needed)
   --clear-cache   Clear printed tasks cache (will reprint all)
   --test-printer  Print a test ticket
   --help, -h      Show this help

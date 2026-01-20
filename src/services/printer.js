@@ -1,13 +1,16 @@
-const escpos = require('escpos');
 const { config } = require('../config');
 
-// Load USB adapter
-escpos.USB = require('escpos-usb');
-
 class PrinterService {
-  constructor() {
+  constructor(options = {}) {
+    this.dryRun = options.dryRun || false;
     this.printedTasks = new Set();
     this.loadPrintedTasks();
+
+    // Only load escpos if not in dry-run mode
+    if (!this.dryRun) {
+      this.escpos = require('escpos');
+      this.escpos.USB = require('escpos-usb');
+    }
   }
 
   /**
@@ -77,7 +80,7 @@ class PrinterService {
       const Network = require('escpos-network');
       return new Network(config.printer.networkHost, config.printer.networkPort);
     }
-    return new escpos.USB();
+    return new this.escpos.USB();
   }
 
   /**
@@ -89,6 +92,32 @@ class PrinterService {
   }
 
   /**
+   * Simulate printing a task (dry-run mode)
+   */
+  simulatePrint(task) {
+    const maxWidth = config.printer.paperWidth === 80 ? 48 : 32;
+    const separator = '─'.repeat(maxWidth);
+
+    console.log('');
+    console.log('┌' + '─'.repeat(maxWidth + 2) + '┐');
+    console.log('│' + task.id.padStart((maxWidth + 2 + task.id.length) / 2).padEnd(maxWidth + 2) + '│');
+    console.log('│' + separator.padStart((maxWidth + 2 + separator.length) / 2).padEnd(maxWidth + 2) + '│');
+    console.log('│ ' + this.truncate(task.title, maxWidth).padEnd(maxWidth) + ' │');
+    console.log('│' + ' '.repeat(maxWidth + 2) + '│');
+    console.log('│ ' + `Priority: ${task.priority}`.padEnd(maxWidth) + ' │');
+    console.log('│ ' + `Points:   ${task.points}`.padEnd(maxWidth) + ' │');
+    console.log('│ ' + `Status:   ${task.status}`.padEnd(maxWidth) + ' │');
+    console.log('│' + ' '.repeat(maxWidth + 2) + '│');
+    console.log('│ ' + `Column: ${task.columns.join(', ') || 'N/A'}`.substring(0, maxWidth).padEnd(maxWidth) + ' │');
+    console.log('│' + ' '.repeat(maxWidth + 2) + '│');
+    // console.log('│' + separator.padStart((maxWidth + 2 + separator.length) / 2).padEnd(maxWidth + 2) + '│');
+    console.log('└' + '─'.repeat(maxWidth + 2) + '┘');
+    console.log('');
+
+    return true;
+  }
+
+  /**
    * Print a single task ticket
    */
   async printTask(task) {
@@ -97,9 +126,17 @@ class PrinterService {
       return false;
     }
 
+    // Dry-run mode: simulate printing
+    if (this.dryRun) {
+      console.log(`[DRY-RUN] Simulating print for ${task.id}`);
+      this.simulatePrint(task);
+      // Don't mark as printed in dry-run mode
+      return true;
+    }
+
     const device = this.getDevice();
     const options = { encoding: 'UTF-8' };
-    const printer = new escpos.Printer(device, options);
+    const printer = new this.escpos.Printer(device, options);
 
     return new Promise((resolve, reject) => {
       device.open(err => {
