@@ -27,4 +27,5 @@ Thumbs.db
 
 # Build output
 dist/
+dest/
 build/
