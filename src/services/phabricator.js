@@ -119,20 +119,24 @@ class PhabricatorService {
   filterSprintTasks(tasks) {
     const sprintKeywords = config.filters.sprintColumns;
 
+    // Pre-compile regex for faster matching
+    const sprintPattern = new RegExp(sprintKeywords.join('|'), 'i');
+
     return tasks.filter(task => {
       const columnsData = task.attachments?.columns?.boards;
       if (!columnsData) return false;
 
-      // Check if task is in any sprint-related column
-      return Object.values(columnsData).some(board =>
-        board.columns.some(col =>
-          sprintKeywords.some(keyword =>
-            col.name.toLowerCase().includes(keyword)
-          )
-        )
-      );
+      for (const board of Object.values(columnsData)) {
+        for (const col of board.columns) {
+          if (sprintPattern.test(col.name)) {
+            return true;
+          }
+        }
+      }
+      return false;
     });
   }
+
 
   /**
    * Format task data for printing
